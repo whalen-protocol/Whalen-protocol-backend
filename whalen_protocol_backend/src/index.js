@@ -1,6 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import pool from './config/database.js';
 import { errorHandler } from './middleware/auth.js';
 import agentsRouter from './routes/agents.js';
@@ -12,6 +15,9 @@ import paymentsRouter from './routes/payments.js';
 import verificationsRouter from './routes/verifications.js';
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,6 +68,34 @@ app.use((req, res) => {
 // Error handler
 app.use(errorHandler);
 
+// Database initialization
+const initializeDatabase = async () => {
+  try {
+    console.log('Checking database schema...');
+    
+    // Check if tables exist
+    const result = await pool.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = 'agents'
+      );
+    `);
+
+    if (!result.rows[0].exists) {
+      console.log('Creating database schema...');
+      const schemaPath = path.join(__dirname, 'config', 'schema.sql');
+      const schema = fs.readFileSync(schemaPath, 'utf-8');
+      await pool.query(schema);
+      console.log('✓ Database schema created successfully');
+    } else {
+      console.log('✓ Database schema already exists');
+    }
+  } catch (error) {
+    console.error('✗ Database initialization error:', error.message);
+    throw error;
+  }
+};
+
 // Database connection test
 const testDatabaseConnection = async () => {
   try {
@@ -69,7 +103,7 @@ const testDatabaseConnection = async () => {
     console.log('✓ Database connected:', result.rows[0]);
   } catch (error) {
     console.error('✗ Database connection failed:', error.message);
-    process.exit(1);
+    throw error;
   }
 };
 
@@ -77,6 +111,7 @@ const testDatabaseConnection = async () => {
 const startServer = async () => {
   try {
     await testDatabaseConnection();
+    await initializeDatabase();
 
     app.listen(PORT, () => {
       console.log(`
